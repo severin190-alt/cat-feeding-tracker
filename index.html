@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#f3f4f6" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Cat Feeding" />
+  <title>Cat Feeding Tracker</title>
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <style>
+    :root {
+      color-scheme: light;
+    }
+  </style>
+</head>
+<body class="min-h-screen bg-slate-100 text-slate-900 antialiased">
+  <main class="mx-auto w-full max-w-md p-4 pb-8">
+    <header class="mb-4">
+      <h1 class="text-2xl font-semibold tracking-tight">Cat Feeding Tracker</h1>
+      <p class="mt-1 text-sm text-slate-500">For Sabrina, Line, and Søren</p>
+    </header>
+
+    <section class="mb-4 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+      <h2 class="text-sm font-medium text-slate-500">Feeding Times</h2>
+      <p class="mt-2 text-base font-semibold text-slate-800">12.00hr and 18.00hr</p>
+    </section>
+
+    <section id="statusCard" class="mb-4 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div class="flex items-center justify-between">
+        <h2 class="text-sm font-medium text-slate-500">Cat Status</h2>
+        <span id="statusBadge" class="rounded-full px-3 py-1 text-xs font-semibold">Loading...</span>
+      </div>
+      <p id="statusText" class="mt-3 text-sm text-slate-700">Checking latest feeding...</p>
+      <p id="lastFedText" class="mt-2 text-xs text-slate-500"></p>
+    </section>
+
+    <section class="mb-4 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+      <h2 class="mb-3 text-sm font-medium text-slate-500">Who is feeding?</h2>
+      <div class="grid grid-cols-3 gap-2">
+        <button class="user-btn rounded-2xl border border-slate-200 px-3 py-4 text-base font-semibold transition" data-user="Sabrina">Sabrina</button>
+        <button class="user-btn rounded-2xl border border-slate-200 px-3 py-4 text-base font-semibold transition" data-user="Line">Line</button>
+        <button class="user-btn rounded-2xl border border-slate-200 px-3 py-4 text-base font-semibold transition" data-user="Søren">Søren</button>
+      </div>
+    </section>
+
+    <section class="mb-4">
+      <button id="feedBtn" class="w-full rounded-3xl bg-slate-900 px-5 py-5 text-base font-semibold text-white shadow-sm transition active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40">
+        I have fed the cat
+      </button>
+      <p id="actionMessage" class="mt-2 text-center text-sm text-slate-600"></p>
+    </section>
+
+    <section class="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div class="mb-3 flex items-center justify-between">
+        <h2 class="text-sm font-medium text-slate-500">Last 10 feedings</h2>
+        <button id="refreshBtn" class="rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-50">Refresh</button>
+      </div>
+      <ul id="historyList" class="space-y-2"></ul>
+      <p id="emptyHistory" class="hidden text-sm text-slate-500">No feedings logged yet.</p>
+    </section>
+  </main>
+
+  <script>
+    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycby2-9x9z48WDkcldfwx6KPO6Vdg_Dd3EpNc4e-R7JGm7swRdhrbOL0iu9VMhDKpAvi9rA/exec';
+
+    const USERS = ['Sabrina', 'Line', 'Søren'];
+    const STORAGE_KEY = 'cat-feeding-selected-user';
+    const MS_HOUR = 60 * 60 * 1000;
+
+    let selectedUser = localStorage.getItem(STORAGE_KEY) || USERS[0];
+    let historyEntries = [];
+
+    const userButtons = Array.from(document.querySelectorAll('.user-btn'));
+    const feedBtn = document.getElementById('feedBtn');
+    const refreshBtn = document.getElementById('refreshBtn');
+    const actionMessage = document.getElementById('actionMessage');
+    const historyList = document.getElementById('historyList');
+    const emptyHistory = document.getElementById('emptyHistory');
+    const statusBadge = document.getElementById('statusBadge');
+    const statusText = document.getElementById('statusText');
+    const lastFedText = document.getElementById('lastFedText');
+    const defaultFeedButtonText = 'I have fed the cat';
+
+    function safeDate(value) {
+      const d = new Date(value);
+      return Number.isNaN(d.getTime()) ? null : d;
+    }
+
+    function formatRelativeTime(date) {
+      const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+      const abs = Math.abs(seconds);
+      const rtf = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
+
+      if (abs < 60) return rtf.format(-Math.floor(seconds), 'second');
+      if (abs < 3600) return rtf.format(-Math.floor(seconds / 60), 'minute');
+      if (abs < 86400) return rtf.format(-Math.floor(seconds / 3600), 'hour');
+      return rtf.format(-Math.floor(seconds / 86400), 'day');
+    }
+
+    function formatExactTime(date) {
+      return new Intl.DateTimeFormat('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
+      }).format(date);
+    }
+
+    function formatExactDateTime(date) {
+      return new Intl.DateTimeFormat('en-US', {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
+      }).format(date);
+    }
+
+    function setActionMessage(text, isError = false) {
+      actionMessage.textContent = text;
+      actionMessage.className = 'mt-2 text-center text-sm ' + (isError ? 'text-rose-600' : 'text-slate-600');
+    }
+
+    function renderUserButtons() {
+      userButtons.forEach((btn) => {
+        const isActive = btn.dataset.user === selectedUser;
+        btn.className = 'user-btn rounded-2xl border px-3 py-4 text-base font-semibold transition ' +
+          (isActive
+            ? 'border-slate-900 bg-slate-900 text-white shadow-sm'
+            : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50');
+      });
+    }
+
+    function getMostRecentEntry() {
+      if (!historyEntries.length) return null;
+      const sorted = [...historyEntries].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+      return sorted[0];
+    }
+
+    function currentWindowDueTime(now) {
+      const noon = new Date(now);
+      noon.setHours(12, 0, 0, 0);
+
+      const evening = new Date(now);
+      evening.setHours(18, 0, 0, 0);
+
+      if (now >= evening) return evening;
+      if (now >= noon) return noon;
+      return null;
+    }
+
+    function getStatus(now, lastFedDate) {
+      if (!lastFedDate) {
+        const due = currentWindowDueTime(now);
+        if (due) {
+          return {
+            level: 'yellow',
+            badge: 'Due Soon / Waiting',
+            text: 'A feeding window has started and no feeding is logged yet.'
+          };
+        }
+        return {
+          level: 'yellow',
+          badge: 'Due Soon / Waiting',
+          text: 'No feeding logged yet today. Next target is 12:00.'
+        };
+      }
+
+      const hoursSince = (now - lastFedDate) / MS_HOUR;
+
+      if (hoursSince > 8) {
+        return {
+          level: 'red',
+          badge: 'Hungry',
+          text: 'More than 8 hours have passed since the last feeding.'
+        };
+      }
+
+      if (hoursSince <= 4) {
+        return {
+          level: 'green',
+          badge: 'Full',
+          text: 'Fed within the last 4 hours.'
+        };
+      }
+
+      const due = currentWindowDueTime(now);
+      if (due && lastFedDate < due) {
+        return {
+          level: 'yellow',
+          badge: 'Due Soon / Waiting',
+          text: 'It is past 12:00/18:00 and no feeding is logged for this window.'
+        };
+      }
+
+      return {
+        level: 'yellow',
+        badge: 'Due Soon / Waiting',
+        text: 'Last feeding is between 4 and 8 hours ago.'
+      };
+    }
+
+    function applyStatusVisuals(status) {
+      const map = {
+        green: {
+          badge: 'bg-emerald-100 text-emerald-700',
+          card: 'border-emerald-200 bg-emerald-50/60'
+        },
+        yellow: {
+          badge: 'bg-amber-100 text-amber-700',
+          card: 'border-amber-200 bg-amber-50/60'
+        },
+        red: {
+          badge: 'bg-rose-100 text-rose-700',
+          card: 'border-rose-200 bg-rose-50/60'
+        }
+      };
+
+      const style = map[status.level] || map.yellow;
+      const card = document.getElementById('statusCard');
+
+      card.className = 'mb-4 rounded-3xl border p-4 shadow-sm ' + style.card;
+      statusBadge.className = 'rounded-full px-3 py-1 text-xs font-semibold ' + style.badge;
+      statusBadge.textContent = status.badge;
+      statusText.textContent = status.text;
+    }
+
+    function renderStatus() {
+      const now = new Date();
+      const latest = getMostRecentEntry();
+      const lastFedDate = latest ? safeDate(latest.timestamp) : null;
+      const status = getStatus(now, lastFedDate);
+      applyStatusVisuals(status);
+
+      if (lastFedDate) {
+        lastFedText.textContent = 'Last fed ' + formatRelativeTime(lastFedDate) + ' (' + formatExactDateTime(lastFedDate) + ')';
+      } else {
+        lastFedText.textContent = 'No feedings have been recorded yet.';
+      }
+    }
+
+    function renderHistory() {
+      historyList.innerHTML = '';
+
+      if (!historyEntries.length) {
+        emptyHistory.classList.remove('hidden');
+        return;
+      }
+      emptyHistory.classList.add('hidden');
+
+      historyEntries.forEach((entry) => {
+        const date = safeDate(entry.timestamp);
+        if (!date) return;
+
+        const item = document.createElement('li');
+        item.className = 'rounded-2xl border border-slate-100 bg-slate-50 p-3';
+        item.innerHTML = `
+          <div class="flex items-center justify-between gap-3">
+            <span class="text-sm font-semibold text-slate-800">${entry.name}</span>
+            <span class="text-xs text-slate-500">${formatRelativeTime(date)}</span>
+          </div>
+          <p class="mt-1 text-xs text-slate-500">${formatExactTime(date)}</p>
+        `;
+        historyList.appendChild(item);
+      });
+    }
+
+    async function fetchHistory() {
+      if (!SCRIPT_URL || SCRIPT_URL === 'YOUR_URL_HERE') {
+        setActionMessage('Please paste your deployed Apps Script URL into SCRIPT_URL.', true);
+        historyEntries = [];
+        renderHistory();
+        renderStatus();
+        return;
+      }
+
+      try {
+        const response = await fetch(SCRIPT_URL, { method: 'GET' });
+        if (!response.ok) throw new Error('Network error: ' + response.status);
+        const data = await response.json();
+
+        if (!data.ok || !Array.isArray(data.entries)) {
+          throw new Error(data.error || 'Invalid response from server');
+        }
+
+        historyEntries = data.entries.slice(0, 10);
+        renderHistory();
+        renderStatus();
+      } catch (error) {
+        setActionMessage('Could not fetch history: ' + error.message, true);
+      }
+    }
+
+    async function postFeeding() {
+      if (!SCRIPT_URL || SCRIPT_URL === 'YOUR_URL_HERE') {
+        setActionMessage('Please paste your deployed Apps Script URL into SCRIPT_URL.', true);
+        return;
+      }
+
+      feedBtn.disabled = true;
+      feedBtn.textContent = 'Saving...';
+      setActionMessage('Saving feeding...');
+
+      try {
+        const response = await fetch(SCRIPT_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: selectedUser })
+        });
+
+        if (!response.ok) throw new Error('Network error: ' + response.status);
+        const data = await response.json();
+        if (!data.ok) throw new Error(data.error || 'Server rejected request');
+
+        setActionMessage('Saved. Great job, ' + selectedUser + '!');
+        await fetchHistory();
+      } catch (error) {
+        setActionMessage('Could not save feeding: ' + error.message, true);
+      } finally {
+        feedBtn.disabled = false;
+        feedBtn.textContent = defaultFeedButtonText;
+      }
+    }
+
+    function setupEvents() {
+      userButtons.forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const user = btn.dataset.user;
+          if (!USERS.includes(user)) return;
+          selectedUser = user;
+          localStorage.setItem(STORAGE_KEY, selectedUser);
+          renderUserButtons();
+          setActionMessage('Active user: ' + selectedUser);
+        });
+      });
+
+      feedBtn.addEventListener('click', postFeeding);
+      refreshBtn.addEventListener('click', fetchHistory);
+    }
+
+    function setupManifest() {
+      const manifest = {
+        name: 'Cat Feeding Tracker',
+        short_name: 'Cat Feed',
+        start_url: '.',
+        display: 'standalone',
+        background_color: '#f1f5f9',
+        theme_color: '#f3f4f6',
+        icons: [
+          {
+            src: 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 192 192%22%3E%3Crect width=%22192%22 height=%22192%22 rx=%2236%22 fill=%22%23111827%22/%3E%3Ctext x=%2296%22 y=%22114%22 text-anchor=%22middle%22 font-size=%2290%22 fill=%22white%22%3E%F0%9F%90%B1%3C/text%3E%3C/svg%3E',
+            sizes: '192x192',
+            type: 'image/svg+xml',
+            purpose: 'any maskable'
+          }
+        ]
+      };
+
+      const blob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
+      const manifestURL = URL.createObjectURL(blob);
+      const link = document.createElement('link');
+      link.rel = 'manifest';
+      link.href = manifestURL;
+      document.head.appendChild(link);
+    }
+
+    function init() {
+      setupManifest();
+      renderUserButtons();
+      renderHistory();
+      renderStatus();
+      setupEvents();
+      fetchHistory();
+    }
+
+    init();
+  </script>
+</body>
+</html>
