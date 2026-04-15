@@ -308,7 +308,8 @@
       try {
         const response = await fetch(SCRIPT_URL, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          // Use a simple request (no custom headers) to avoid CORS preflight
+          // issues with Google Apps Script Web Apps.
           body: JSON.stringify({ name: selectedUser })
         });
 
